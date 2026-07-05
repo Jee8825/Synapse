@@ -1,0 +1,38 @@
+# SYNAPSE — Round 1 locked stack.  Target: Python 3.11+ (see CLAUDE.md §7).
+#
+# Versions are pinned per layer AS each layer is first installed (a deterministic,
+# byte-for-byte reproducible run starts with pinned deps — CLAUDE.md §6/§7). Pinned values
+# below were resolved in a fresh Python 3.11.14 venv. Layers not yet built keep TODO
+# placeholders to pin when their code lands.
+
+# --- Sensors + features (data path — Days 1-2) : INSTALLED & PINNED ---
+numpy==2.4.6
+scipy==1.17.1            # scipy.io.loadmat (CWRU), scipy.stats (kurtosis/skew)
+
+# --- L1 — worker model (Isolation Forest) : INSTALLED & PINNED ---
+scikit-learn==1.9.0      # not used until the L1 task; pinned now since it's in the env
+
+# --- L2 — drift-conscience : INSTALLED & PINNED ---
+river==0.25.0            # ADWIN concept drift
+mapie==1.4.1             # NOT used for anomaly conformal (it's supervised); split-conformal is
+                         # implemented directly in l2_trust/conformal.py. Pinned for the RUL
+                         # conformal-regression stretch, where MAPIE genuinely fits.
+
+# --- L3 — case memory ---
+# faiss-cpu INTENTIONALLY NOT a dependency: at N=3 nodes / ≤dozens of signatures, exact numpy
+# cosine is correct and fastest; an IVF/HNSW index is deployment-scale theater here (CLAUDE.md
+# §7 sanctions the numpy fallback). Revisit only at deployment scale.
+
+# --- L4 — gossip transport : INSTALLED & PINNED ---
+eclipse-zenoh==1.9.0     # PEER MODE only (brokerless full mesh; no router)
+
+# --- Dashboard : INSTALLED & PINNED ---
+fastapi==0.138.0         # serves events/<scenario>.jsonl read-only at localhost:8080
+uvicorn==0.49.0
+
+# --- Dev / test : INSTALLED & PINNED ---
+pytest==9.1.1
+
+# Optional (only if Isolation Forest proves insufficient — prefer Isolation Forest):
+# torch                  # TODO: pin ==<version>
+# onnxruntime            # TODO: pin ==<version>

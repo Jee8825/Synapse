@@ -1,0 +1,8 @@
+data/
+.venv/
+__pycache__/
+.obsidian/
+graphify-out/
+dist/
+node_modules/
+dashboard/static/vivarium/vendor/

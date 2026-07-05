@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNAPSE — Vivarium · 3D Fleet Twin</title>
+
+  <!-- Importmap: bare "three" resolves to the locally vendored build (no CDN at runtime — the
+       product story is offline/air-gapped). Absolute paths because the page is served at /3d
+       (no trailing slash), so relative "./vendor/..." would resolve against "/". -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/static/vivarium/vendor/three.module.js"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --cyan: #22d3ee; --cyan-dim: #0e7490; --ink: #dbf1f8; --muted: #7fa6b4;
+      --confident: #10b5b0; --stale: #d98a17; --unknown: #f43f5e; --bornwise: #22d3ee;
+      --newfault: #f97316; --peerfault: #a855f7;
+      --integrity: #d946ef; --wire-a: #38bdf8; --wire-b: #5eead4;
+      --panel: rgba(10, 24, 36, 0.62); --panel-line: rgba(34, 211, 238, 0.28);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0a1622; }
+    body { font: 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--ink); }
+    #viewport { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+
+    /* glassmorphic dark HUD panels with thin cyan borders */
+    .panel {
+      position: fixed; background: var(--panel); border: 1px solid var(--panel-line);
+      border-radius: 12px; backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+      box-shadow: 0 6px 26px rgba(0, 0, 0, 0.35);
+    }
+
+    .topbar { top: 14px; left: 14px; padding: 11px 16px 12px; max-width: 600px; }
+    .brand { font-size: 16px; font-weight: 700; letter-spacing: .5px; color: var(--cyan); }
+    .tagline { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .tabs button {
+      border: 1px solid var(--panel-line); background: rgba(34, 211, 238, 0.06); color: var(--muted);
+      padding: 5px 11px; border-radius: 999px; cursor: pointer; font: 11px ui-monospace, Menlo, monospace;
+      font-weight: 600; transition: background .15s, color .15s, border-color .15s;
+    }
+    .tabs button:hover { color: var(--cyan); border-color: var(--cyan); }
+    .tabs button.active { background: var(--cyan); color: #04222b; border-color: var(--cyan); }
+    .narrative { margin: 9px 0 0; color: var(--muted); font-size: 11.5px; font-style: italic; max-width: 540px; }
+
+    .legend { top: 14px; right: 14px; padding: 12px 14px; width: 268px; }
+    .legend h3 { margin: 0 0 6px; font-size: 10px; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .legend .group { margin-bottom: 10px; }
+    .legend .group:last-child { margin-bottom: 0; }
+    .legend .row { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 11.5px; }
+    .legend .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+    .legend .sw.ring { border-radius: 999px; background: transparent; border: 2px solid currentColor; }
+    .legend .confident { color: var(--confident); background: var(--confident); }
+    .legend .stale { color: var(--stale); background: var(--stale); }
+    .legend .unknown { color: var(--unknown); background: var(--unknown); }
+    .legend .gossip { background: linear-gradient(90deg, var(--cyan), transparent); }
+    .legend .sw-alarm { background: var(--unknown); }
+    .legend .pulse { background: var(--cyan); opacity: .55; }
+    .legend .note { font-size: 10.5px; color: var(--muted); margin-top: 4px; padding-top: 6px; border-top: 1px dashed rgba(127, 166, 180, 0.3); line-height: 1.4; }
+    .legend .illus-tag { color: var(--cyan); font-style: italic; }
+
+    /* the climax: systemic batch-defect banner */
+    .alarm {
+      position: fixed; top: 118px; left: 50%; transform: translateX(-50%);
+      max-width: min(560px, 70vw); padding: 12px 22px; border-radius: 12px;
+      background: linear-gradient(90deg, rgba(127,29,29,.94), rgba(159,18,57,.94));
+      border: 2px solid var(--unknown); color: #ffe4e6; font-weight: 700; font-size: 15px;
+      text-align: center; z-index: 8; animation: alarmpulse 1.3s infinite;
+    }
+    .alarm .sub { font-weight: 500; font-size: 11.5px; color: #fecdd3; margin-top: 3px; }
+    .alarm.hidden { display: none; }
+    @keyframes alarmpulse {
+      0% { box-shadow: 0 0 0 0 rgba(244,63,94,.45); }
+      70% { box-shadow: 0 0 0 16px rgba(244,63,94,0); }
+      100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); }
+    }
+
+    /* rolling fleet event log */
+    .ticker-panel { left: 14px; bottom: 84px; width: 380px; max-height: 220px; padding: 10px 12px; display: flex; flex-direction: column; }
+    .ticker-panel h3 { margin: 0 0 6px; font-size: 10px; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .ticker { list-style: none; margin: 0; padding: 0; overflow-y: auto; font-size: 11px; }
+    .ticker li { padding: 3px 0; border-bottom: 1px solid rgba(127, 166, 180, 0.12); color: var(--ink); display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+    .ticker li.now { background: rgba(34, 211, 238, 0.08); }
+    .ticker .who { color: var(--muted); font-size: 10px; }
+    .tag { font-weight: 700; font-size: 9.5px; padding: 1px 5px; border-radius: 4px; flex: none; }
+    .tag.teach { background: rgba(34, 211, 238, 0.18); color: var(--cyan); }
+    .tag.learn { background: rgba(16, 181, 176, 0.2); color: var(--confident); }
+    .tag.alarm { background: rgba(244, 63, 94, 0.22); color: var(--unknown); }
+    .tag.escal { background: rgba(251, 113, 133, 0.2); color: #fb7185; }
+    .tag.stale { background: rgba(217, 138, 23, 0.2); color: var(--stale); }
+    .tag.reject { background: rgba(217, 70, 239, 0.2); color: var(--integrity); }
+    .tag.degraded { background: rgba(217, 138, 23, 0.16); color: var(--stale); }
+
+    .legend .hint { color: var(--cyan); opacity: .85; }
+
+    /* node inspector (click a node) */
+    .inspector { right: 14px; bottom: 84px; width: 268px; padding: 12px 14px; font-size: 11.5px; }
+    .inspector.hidden { display: none; }
+    .inspector .ihead { font-size: 13px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--panel-line); display: flex; align-items: center; gap: 6px; }
+    .inspector .ihead button { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 2px; }
+    .inspector .ihead button:hover { color: var(--unknown); }
+    .inspector .irow { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; }
+    .inspector .irow span:first-child { color: var(--muted); }
+    .inspector .isig { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--panel-line); color: var(--muted); font-size: 10.5px; }
+    .inspector .isig ul { list-style: none; margin: 5px 0 0; padding: 0; }
+    .inspector .isig li { padding: 1px 0; color: var(--ink); }
+    .inspector .isig code { color: var(--cyan); }
+    .inspector .dim { color: var(--muted); }
+    /* under-the-hood node console: state + reason + self-trust gauge vs the τ threshold */
+    .inspector .istate { font-size: 13px; font-weight: 700; letter-spacing: .5px; margin: 2px 0 1px; }
+    .inspector .ireason { font-size: 10.5px; color: var(--muted); margin-bottom: 8px; line-height: 1.35; }
+    .inspector .gauge { position: relative; height: 9px; border-radius: 99px; background: rgba(127,166,180,.16); overflow: hidden; margin-top: 2px; }
+    .inspector .gfill { height: 100%; border-radius: 99px; transition: width .3s ease; box-shadow: 0 0 8px currentColor; }
+    .inspector .gtau { position: absolute; top: -2px; bottom: -2px; left: 50%; width: 2px; background: #eaf6fb; opacity: .8; }
+    .inspector .gtau::after { content: "τ"; position: absolute; top: -12px; left: -3px; font-size: 8px; color: #eaf6fb; }
+    .inspector .gcap { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin: 3px 0 9px; }
+
+    /* sound toggle (in the transport bar) */
+    .transport .sound {
+      background: rgba(34, 211, 238, 0.14); border: 1px solid var(--panel-line); border-radius: 8px;
+      width: 34px; height: 32px; font-size: 15px; cursor: pointer; line-height: 1;
+    }
+    .transport .sound:hover { background: rgba(34, 211, 238, 0.26); }
+    .transport .sound.off { opacity: .55; filter: grayscale(1); }
+
+    /* lower-third narration caption */
+    .caption {
+      position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%);
+      max-width: min(660px, 76vw); padding: 9px 18px; z-index: 7; text-align: center;
+      background: rgba(8, 18, 28, 0.82); border: 1px solid var(--panel-line);
+      border-left: 3px solid var(--cyan); border-radius: 10px; backdrop-filter: blur(8px);
+      font-size: 12.5px; line-height: 1.4; color: var(--ink); pointer-events: none;
+      transition: border-color .25s, color .25s; box-shadow: 0 6px 22px rgba(0,0,0,.35);
+    }
+    .caption.hidden { display: none; }
+    .caption.cyan  { border-left-color: var(--cyan); }
+    .caption.teal  { border-left-color: var(--confident); }
+    .caption.amber { border-left-color: var(--stale); color: #ffe9c7; }
+    .caption.red   { border-left-color: var(--unknown); color: #ffe4e6; font-weight: 600; }
+    .caption.magenta { border-left-color: var(--integrity); color: #fbe2ff; font-weight: 600; }
+
+    /* screen-edge alert vignette (flashes on a major beat) */
+    .vignette {
+      position: fixed; inset: 0; z-index: 6; pointer-events: none; opacity: 0;
+      transition: opacity .18s ease; --vig: rgba(244,63,94,.55);
+      box-shadow: inset 0 0 160px 40px var(--vig);
+    }
+    .vignette.red   { --vig: rgba(244,63,94,.6); }
+    .vignette.amber { --vig: rgba(217,138,23,.5); }
+    .vignette.teal  { --vig: rgba(16,181,176,.5); }
+    .vignette.magenta { --vig: rgba(217,70,239,.55); }
+    .vignette.on { animation: vigflash .7s ease-out; }
+    @keyframes vigflash { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
+
+    /* transport */
+    .transport { left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 10px 16px; }
+    .transport .play {
+      background: rgba(34, 211, 238, 0.14); color: var(--cyan); border: 1px solid var(--panel-line);
+      border-radius: 8px; width: 36px; height: 32px; font-size: 15px; cursor: pointer;
+    }
+    .transport .play:hover { background: rgba(34, 211, 238, 0.26); }
+    .transport .readout { display: flex; flex-direction: column; min-width: 78px; line-height: 1.2; }
+    .transport .act { color: var(--cyan); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
+    .transport #tickno { color: var(--muted); font-size: 11px; }
+    .transport .timeline { position: relative; width: 360px; }
+    .transport .timeline input { width: 100%; accent-color: var(--cyan); cursor: pointer; }
+    .beats { position: absolute; left: 0; right: 0; top: -14px; height: 12px; pointer-events: none; }
+    .beat {
+      position: absolute; transform: translateX(-50%); font-size: 9px; color: var(--cyan);
+      white-space: nowrap; background: rgba(10, 24, 36, 0.8); padding: 0 3px; border-radius: 3px;
+      border: 1px solid var(--panel-line);
+    }
+    .beat::after { content: ""; position: absolute; left: 50%; bottom: -5px; width: 1px; height: 5px; background: var(--cyan); }
+    .transport .speed { color: var(--muted); font-size: 11px; }
+    .transport .speed select { background: rgba(10, 24, 36, 0.8); color: var(--ink); border: 1px solid var(--panel-line); border-radius: 6px; padding: 3px 5px; font: 11px ui-monospace, Menlo, monospace; }
+
+    /* projected 3D labels (positioned each frame by src/labels.js) */
+    #labels { position: fixed; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+    .vlabel {
+      position: absolute; top: 0; left: 0; white-space: nowrap;
+      font: 10px/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .3px;
+      color: var(--cyan); background: rgba(8, 18, 28, 0.64);
+      border: 1px solid rgba(34, 211, 238, 0.22); border-radius: 5px; padding: 2px 6px;
+      transform: translate(-50%, -50%); text-shadow: 0 0 6px rgba(34, 211, 238, 0.4);
+    }
+    .vlabel.title { font-size: 12px; font-weight: 700; color: #eaf6fb; border-color: rgba(34, 211, 238, 0.5); background: rgba(8, 18, 28, 0.78); }
+    .vlabel.readout { font-size: 10px; font-weight: 700; letter-spacing: .4px; background: rgba(8, 18, 28, 0.78); text-shadow: none; min-width: 116px; }
+    .vlabel.readout .rdline { text-align: center; }
+    .vlabel.readout .cband { margin-top: 3px; height: 4px; border-radius: 99px; background: rgba(127, 166, 180, 0.22); overflow: hidden; }
+    .vlabel.readout .cband i { display: block; height: 100%; border-radius: 99px; transition: width .25s ease; }
+    .vlabel.readout .ccap { margin-top: 2px; font-size: 8px; font-weight: 500; color: var(--muted); letter-spacing: .2px; text-align: center; }
+    .vlabel.readout .rgate { margin-top: 3px; font-size: 8.5px; font-weight: 700; color: var(--stale); text-align: center; border-top: 1px dashed rgba(217,138,23,.35); padding-top: 2px; }
+    .vlabel.readout .rhalt { margin-top: 3px; font-size: 8.5px; font-weight: 700; color: var(--unknown); text-align: center; border-top: 1px dashed rgba(244,63,94,.4); padding-top: 2px; letter-spacing: .3px; }
+    .vlabel.readout .rchan { margin-top: 3px; font-size: 8.5px; font-weight: 700; color: var(--integrity); text-align: center; border-top: 1px dashed rgba(217,70,239,.4); padding-top: 2px; letter-spacing: .2px; }
+    .vlabel.sensor { color: #9fe9f7; }
+    .vlabel.plate { color: var(--cyan); }
+    .vlabel.muted { color: var(--muted); text-shadow: none; }
+
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #0a1622; color: var(--cyan); font-size: 13px; letter-spacing: 1px; z-index: 10;
+      transition: opacity .4s; pointer-events: none;
+    }
+    #loading.hidden { opacity: 0; }
+  </style>
+</head>
+<body>
+  <canvas id="viewport"></canvas>
+  <div id="vignette" class="vignette"></div>
+  <div id="labels"></div>
+
+  <header class="panel topbar">
+    <div class="brand" style="display:flex;align-items:center;gap:10px">◑ SYNAPSE · Vivarium
+      <a href="/ai" title="switch to the Cognition view — the AI's L1–L4 workflow" style="margin-left:auto;font-size:10.5px;font-weight:600;color:var(--muted);text-decoration:none;border:1px solid var(--panel-line);border-radius:999px;padding:3px 10px">⇆ cognition</a></div>
+    <div class="tagline">3D fleet twin · render-only replay of L1–L4 event logs · peer-to-peer · no cloud</div>
+    <nav id="scenario-tabs" class="tabs" aria-label="scenario"></nav>
+    <p id="narrative" class="narrative"></p>
+  </header>
+
+  <div id="alarm" class="alarm hidden" role="alert"></div>
+
+  <aside class="panel legend">
+    <div class="group">
+      <h3>Replayed from log</h3>
+      <div class="row"><span class="sw ring confident"></span> CONFIDENT — detect · diagnose · teach</div>
+      <div class="row"><span class="sw ring stale"></span> STALE — listen · don't teach</div>
+      <div class="row"><span class="sw ring unknown"></span> UNKNOWN → escalate</div>
+    </div>
+    <div class="group">
+      <h3>Machine stopped · colour = why</h3>
+      <div class="row"><span class="sw" style="background:var(--newfault)"></span> <b style="color:var(--newfault)">new defect pattern</b> — detected first-hand</div>
+      <div class="row"><span class="sw" style="background:var(--peerfault)"></span> <b style="color:var(--peerfault)">AI found the defect</b> — born-wise, from a peer's pattern</div>
+      <div class="row"><span class="sw" style="background:var(--unknown)"></span> <b style="color:var(--unknown)">unknown pattern</b> — stopped, escalated to a human</div>
+      <div class="note">Same halt (spindle stops on a confirmed defect); the <b>ring, spindle glow &amp;
+        beacon</b> colour says WHY — all read from the log (state · confirmed_fault · recognition).</div>
+      <div class="row"><span class="sw gossip"></span> Zenoh gossip arc (peer-to-peer)</div>
+      <div class="row"><span class="sw sw-alarm"></span> systemic batch-defect alarm</div>
+      <div class="row"><span class="sw" style="background:var(--integrity)"></span> ✕ path mismatch — tampered copy <b style="color:var(--integrity)">rejected</b> (per-node comparator)</div>
+      <div class="row"><span class="sw" style="background:var(--unknown);border-radius:999px;box-shadow:0 0 6px var(--unknown)"></span> warning beacon — red fault · amber low-trust</div>
+      <div class="row"><span class="sw" style="background:transparent;border:2px solid var(--stale);border-radius:999px"></span> quarantine dome — self-isolated (can't teach)</div>
+      <div class="row"><span class="sw" style="background:var(--confident);border-radius:999px"></span> ✓ rejoin — re-earned trust, teaching back on</div>
+      <div class="note">Trust ring, gauge, beacon, dome &amp; the <b>beep</b> alarms all ← the same
+        <b>self-trust / state</b> from the log — a louder read-out, never a new signal.</div>
+    </div>
+    <div class="group">
+      <h3>Illustrative <span class="illus-tag">(pipeline animation)</span></h3>
+      <div class="row"><span class="sw pulse"></span> data-flow pulse · L1–L4 plate sweep</div>
+      <div class="row"><span class="sw" style="background:var(--stale)"></span> robotic cell · conveyor line (pick &amp; place)</div>
+      <div class="row"><span class="sw" style="background:var(--wire-a)"></span> wired HSR ring backbone — path A <span class="illus-tag">(fleet)</span></div>
+      <div class="row"><span class="sw" style="background:var(--wire-b)"></span> per-batch wireless router — path B <span class="illus-tag">(fleet)</span></div>
+      <div class="note">Cosmetic "line is running" motion (data-flow path, spindles, robot arm &amp;
+        conveyors) — <i>not</i> replayed from the log; distinct from the states, gossip &amp; alarms above.
+        The fleet-floor <b>PRP comms topology</b> (media-diverse path A + path B · 1oo2D validator per
+        node) is the network <i>architecture</i>; the <b style="color:var(--integrity)">reject verdict</b>
+        above is the real logged comparator decision.</div>
+    </div>
+    <div class="note hint">click a node to inspect · double-click to fly in · hover reveals the sensor rig &amp; L1–L4 labels</div>
+  </aside>
+
+  <aside class="panel ticker-panel">
+    <h3>Fleet event log</h3>
+    <ul id="ticker" class="ticker"></ul>
+  </aside>
+
+  <aside id="inspector" class="panel inspector hidden"></aside>
+
+  <div id="caption" class="caption cyan"></div>
+
+  <footer class="panel transport">
+    <button id="play" class="play" aria-label="play/pause">▶</button>
+    <button id="sound" class="sound" aria-label="toggle sound">🔊</button>
+    <div class="readout"><span id="act" class="act">setup</span><span id="tickno">t=0</span></div>
+    <div class="timeline">
+      <input id="scrub" type="range" min="0" max="0" value="0" step="1" />
+      <div id="beats" class="beats"></div>
+    </div>
+    <label class="speed">speed
+      <select id="speed">
+        <option value="0.1">0.1×</option>
+        <option value="0.25" selected>0.25×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1">1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+    </label>
+  </footer>
+
+  <div id="loading">initializing vivarium…</div>
+
+  <script type="module" src="/static/vivarium/src/main.js"></script>
+</body>
+</html>

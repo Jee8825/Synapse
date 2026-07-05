@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SYNAPSE — Fleet Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">◑ SYNAPSE</div>
+      <div class="tagline">Collective Nervous System for Offline Edge Fleets · peer-to-peer · no cloud</div>
+    </div>
+    <nav id="scenario-tabs" class="tabs" aria-label="scenario"></nav>
+  </header>
+
+  <p id="narrative" class="narrative"></p>
+
+  <!-- the climax: systemic batch-defect alarm -->
+  <div id="alarm" class="alarm hidden" role="alert"></div>
+
+  <main class="stage">
+    <section class="fleet-panel">
+      <svg id="fleet" viewBox="0 0 620 470" aria-label="fleet gossip graph">
+        <g id="edges"></g>
+        <g id="flows"></g>
+        <g id="nodes"></g>
+      </svg>
+      <div class="legend">
+        <span><i class="dot confident"></i>confident</span>
+        <span><i class="dot stale"></i>stale (listen, don't teach)</span>
+        <span><i class="dot unknown"></i>unknown → escalate</span>
+        <span><i class="dot bornwise"></i>born-wise (peer signature)</span>
+      </div>
+    </section>
+
+    <aside class="ticker-panel">
+      <h2>Fleet event log</h2>
+      <ul id="ticker" class="ticker"></ul>
+    </aside>
+  </main>
+
+  <footer class="playbar">
+    <button id="play" class="play" aria-label="play/pause">▶</button>
+    <div class="tickreadout"><span id="act" class="act">setup</span><span id="tickno">t=0</span></div>
+    <div class="timeline">
+      <input id="scrub" type="range" min="0" max="0" value="0" step="1" />
+      <div id="beats" class="beats"></div>
+    </div>
+    <label class="speed">speed
+      <select id="speed">
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+        <option value="2">2×</option>
+        <option value="4">4×</option>
+      </select>
+    </label>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
